@@ -1,4 +1,4 @@
-import {normalizePath, App, Editor, EventRef, MarkdownView, Menu, Modal, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, TFolder, addIcon} from 'obsidian';
+import {normalizePath, App, Editor, EventRef, MarkdownView, Menu, Modal, Notice, Plugin, PluginSettingTab, Setting, TAbstractFile, TFile, TFolder, addIcon, EditorChange} from 'obsidian';
 import {LinterSettings, getDisabledRules, rules} from './rules';
 import DiffMatchPatch from 'diff-match-patch';
 import dedent from 'ts-dedent';
@@ -384,6 +384,7 @@ export default class LinterPlugin extends Plugin {
     // Replace changed lines
     const dmp = new DiffMatchPatch.diff_match_patch(); // eslint-disable-line new-cap
     const changes = dmp.diff_main(oldText, newText);
+    const editorChange: EditorChange[] = [];
     let curText = '';
     changes.forEach((change) => {
       function endOfDocument(doc: string) {
@@ -394,17 +395,32 @@ export default class LinterPlugin extends Plugin {
       const [type, value] = change;
 
       if (type == DiffMatchPatch.DIFF_INSERT) {
-        editor.replaceRange(value, endOfDocument(curText));
+
+        editorChange.push({
+          text: value,
+          from: endOfDocument(curText),
+        });
+        
         curText += value;
       } else if (type == DiffMatchPatch.DIFF_DELETE) {
         const start = endOfDocument(curText);
         let tempText = curText;
         tempText += value;
         const end = endOfDocument(tempText);
-        editor.replaceRange('', start, end);
+
+        editorChange.push({
+          text: '',
+          from: start,
+          to: end,
+        });
+
       } else {
         curText += value;
       }
+    });
+
+    editor.transaction({
+      changes: editorChange,
     });
 
     const charsAdded = changes.map((change) => change[0] == DiffMatchPatch.DIFF_INSERT ? change[1].length : 0).reduce((a, b) => a + b, 0);
